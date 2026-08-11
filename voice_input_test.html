@@ -1,0 +1,56 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#111111">
+<title>Voice Input Test</title>
+<style>
+:root{--bg:#111;--panel:#1c1c1e;--text:#f5f5f7;--muted:#a1a1a6;--line:#343437;--accent:#0a84ff;--good:#30d158;--bad:#ff453a}
+*{box-sizing:border-box}html,body{margin:0;min-height:100%;background:var(--bg);color:var(--text);font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif}
+body{display:flex;justify-content:center}main{width:min(680px,100%);padding:24px 18px 40px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:18px;padding:20px}
+h1{font-size:26px;margin:0 0 10px}p{color:var(--muted);line-height:1.45}
+button{width:100%;min-height:54px;border:0;border-radius:12px;padding:14px 16px;font-size:18px;font-weight:700;background:var(--accent);color:#fff;margin-top:8px}
+.status{margin:16px 0;padding:12px;border:1px solid var(--line);border-radius:12px;color:var(--muted)}
+.live{font-size:26px;font-weight:700;min-height:74px;padding:14px;border:1px solid var(--line);border-radius:12px;background:#0d0d0f;white-space:pre-wrap}
+.final{margin-top:12px;font-size:18px;color:var(--good);white-space:pre-wrap}.bad{color:var(--bad)}
+.small{font-size:13px;color:var(--muted);margin-top:14px}
+</style>
+</head>
+<body>
+<main><div class="card">
+<h1>Voice Input Test</h1>
+<p>Tap START, allow microphone/speech recognition if asked, then say:</p>
+<p><b>“Starfish. Ambergris. Nostril. Okay.”</b></p>
+<button id="start">START LISTENING</button>
+<div class="status" id="status">Not started.</div>
+<div class="live" id="live"></div>
+<div class="final" id="final"></div>
+<p class="small">Pass = spoken words appear reasonably accurately and “Okay” is detected without typing.</p>
+</div></main>
+<script>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const statusEl=document.getElementById('status'),liveEl=document.getElementById('live'),finalEl=document.getElementById('final'),startBtn=document.getElementById('start');
+if(!SR){statusEl.innerHTML='<span class="bad">SpeechRecognition API NOT available in this browser.</span>';startBtn.disabled=true}else{statusEl.textContent='SpeechRecognition API detected.'}
+let rec=null,allText='';
+const clean=s=>s.replace(/\s+/g,' ').trim();
+startBtn.addEventListener('click',()=>{
+ if(!SR)return;
+ allText='';liveEl.textContent='';finalEl.textContent='';
+ rec=new SR();rec.lang='en-AU';rec.continuous=true;rec.interimResults=true;
+ rec.onstart=()=>{statusEl.textContent='Listening…';startBtn.disabled=true};
+ rec.onresult=e=>{
+   let interim='';
+   for(let i=e.resultIndex;i<e.results.length;i++){const t=e.results[i][0].transcript;if(e.results[i].isFinal)allText+=' '+t;else interim+=' '+t}
+   const combined=clean(allText+' '+interim);liveEl.textContent=combined;
+   if(/\bokay\b/i.test(combined)||/\bok\b/i.test(combined)){finalEl.textContent='OK detected. Final heard: '+combined;rec.stop()}
+ };
+ rec.onerror=e=>{statusEl.innerHTML='<span class="bad">Error: '+e.error+'</span>';startBtn.disabled=false};
+ rec.onend=()=>{statusEl.textContent='Stopped.';startBtn.disabled=false;if(!finalEl.textContent)finalEl.textContent='Stopped without detecting OK. Heard: '+clean(allText)};
+ try{rec.start()}catch(err){statusEl.innerHTML='<span class="bad">Could not start: '+err.message+'</span>';startBtn.disabled=false}
+});
+</script>
+</body>
+</html>
