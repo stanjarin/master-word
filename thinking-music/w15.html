@@ -1,0 +1,230 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>YouTube</title>
+<style>
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{margin:0;background:#0f0f0f;color:#f1f1f1;font-family:-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;min-height:100%}
+.top{height:57px;display:flex;align-items:center;gap:11px;padding:10px 16px;border-bottom:1px solid #292929}
+.yt{width:32px;height:23px;background:#f03a2c;border-radius:7px;display:grid;place-items:center}
+.tri{width:0;height:0;border-top:6px solid transparent;border-bottom:6px solid transparent;border-left:10px solid #fff;margin-left:2px}
+.logo{font-size:21px;font-weight:800}.search{margin-left:auto;font-size:25px;color:#bbb}
+.stage{position:relative;background:#000;width:100%;aspect-ratio:16/9;overflow:hidden;-webkit-user-select:none;user-select:none}
+video{width:100%;height:100%;object-fit:contain;background:#000;display:block}
+.playbtn{position:absolute;inset:0;margin:auto;width:76px;height:54px;border:0;border-radius:15px;background:#e52d20;display:grid;place-items:center;z-index:4}
+.playbtn .tri{border-top-width:11px;border-bottom-width:11px;border-left-width:18px}
+.info{padding:16px}.title{font-size:20px;line-height:1.3;font-weight:650}.meta{color:#aaa;font-size:13px;margin-top:7px}
+.channel{display:flex;align-items:center;gap:11px;border-top:1px solid #292929;margin-top:18px;padding-top:16px}
+.avatarbtn{width:40px;height:40px;border:0;border-radius:50%;background:#858585;padding:0;flex:0 0 40px}
+.name{font-size:17px;font-weight:650}.sub{font-size:12px;color:#aaa;margin-top:3px}
+.debug{margin:8px 16px;padding:9px 11px;border:1px solid #2c2c2c;border-radius:10px;color:#777;font-size:11px;min-height:31px}
+.good{color:#30d158}.bad{color:#ff453a}
+</style></head>
+<body>
+<div class="top"><div class="yt"><div class="tri"></div></div><div class="logo">YouTube</div><div class="search">⌕</div></div>
+
+<div class="stage" id="stage">
+ <video id="video" playsinline preload="auto" src="lucky.mp4"></video>
+ <button class="playbtn" id="playbtn" aria-label="Play"><div class="tri"></div></button>
+</div>
+
+<div class="info">
+ <div class="title" id="title">I've Been Everywhere — Lucky Starr</div>
+ <div class="meta">Thinking music</div>
+ <div class="channel">
+   <button class="avatarbtn" id="avatar" aria-label="Channel"></button>
+   <div><div class="name" id="artist">Lucky Starr</div><div class="sub">I've Been Everywhere</div></div>
+ </div>
+</div>
+<div class="debug" id="debug">W15 — profile control; no long-press.</div>
+
+<script>
+const SR=window.SpeechRecognition||window.webkitSpeechRecognition;
+const V=document.getElementById('video'),P=document.getElementById('playbtn'),
+ST=document.getElementById('stage'),AV=document.getElementById('avatar'),
+D=document.getElementById('debug'),T=document.getElementById('title'),A=document.getElementById('artist');
+const KEY='thinkingMusicW12';
+
+let rec=null, raw='', clues=[], captured=false, performer='lucky';
+let holdTimer=null,longFired=false;
+
+function dbg(s,c=''){D.className='debug '+c;D.textContent=s}
+function state(){try{return JSON.parse(sessionStorage.getItem(KEY)||'null')}catch(e){return null}}
+function save(s){sessionStorage.setItem(KEY,JSON.stringify(s))}
+function clear(){sessionStorage.removeItem(KEY)}
+
+function parseThree(s){
+  let p=s.split(/[,.!?;]+/).map(x=>x.trim()).filter(Boolean);
+  if(p.length>=3)return p.slice(0,3);
+  let w=s.trim().split(/\s+/).filter(Boolean);
+  return w.length>=3?w.slice(0,3):w;
+}
+function setLucky(load=true){
+ performer='lucky';
+ T.textContent="I've Been Everywhere — Lucky Starr"; A.textContent='Lucky Starr';
+ if(load){V.src='lucky.mp4';V.load()}
+}
+function setCash(load=true){
+ performer='cash';
+ T.textContent="I've Been Everywhere — Johnny Cash"; A.textContent='Johnny Cash';
+ if(load){V.src='cash.mp4';V.load()}
+}
+function promptFor(second=false){
+ const c1=clues[0]||'',c2=clues[1]||'',c3=clues[2]||'';
+ const a=(c2.match(/[A-Za-z]/)||[''])[0].toUpperCase();
+ const b=(c3.match(/[A-Za-z]/)||[''])[0].toUpperCase();
+ const prefix=a+b;
+ return `Infer a hidden MASTER WORD from exactly three spoken clues.
+Clue 1: "${c1}". This is another member of a plausible category containing the MASTER WORD. The category is not given; infer plausible category levels and BROADEN if needed.
+Clue 2: "${c2}". Only its FIRST LETTER matters: the MASTER WORD begins with "${a}".
+Clue 3: "${c3}". Only its FIRST LETTER matters: the SECOND LETTER of the MASTER WORD is "${b}".
+Every candidate MUST begin exactly "${prefix}". Do not output candidates beginning with different letters.
+Speech recognition may have misheard a clue; allow plausible corrections.
+Return exactly 8 likely one-word concrete nouns, best first, no explanation.${second?' The previous suggestions were not useful. Return 8 DIFFERENT candidates and broaden the plausible category further.':''}`;
+}
+
+function playLuckyAfterClues(){
+ captured=true;
+ try{rec.stop()}catch(_){}
+ P.style.display='none';
+ save({phase:'LUCKY',clues,raw,performer:'lucky',time:0});
+ dbg('Three clues captured.','good');
+ // small "YouTube loading" beat
+ setTimeout(()=>{
+   V.currentTime=0;
+   V.play().catch(e=>dbg('Lucky playback blocked: '+e.name,'bad'));
+ },650);
+}
+
+P.addEventListener('click',()=>{
+ const st=state();
+
+ // CASH_READY: visible Cash Play button starts Cash and locks state to CASH
+ if(st && st.phase==='CASH_READY'){
+   performer='cash';
+   captured=true;
+   P.style.display='none';
+   save({...st,phase:'CASH',performer:'cash',time:0});
+   dbg('Cash playing.','good');
+   V.currentTime=0;
+   V.play().catch(e=>dbg('Cash playback blocked: '+e.name,'bad'));
+   return;
+ }
+
+ // Initial Lucky Play: start speech recognition only
+ clear();
+ raw='';clues=[];captured=false;setLucky(true);
+ if(!SR){dbg('SpeechRecognition unavailable.','bad');return}
+ dbg('LISTENING…','good');
+
+ rec=new SR();rec.lang='en-AU';rec.continuous=true;rec.interimResults=true;
+ rec.onresult=e=>{
+   let finals='',interim='';
+   for(let i=e.resultIndex;i<e.results.length;i++){
+     const x=e.results[i][0].transcript;
+     if(e.results[i].isFinal)finals+=' '+x;else interim+=' '+x;
+   }
+   if(finals)raw=(raw+' '+finals).replace(/\s+/g,' ').trim();
+   const heard=(raw+' '+interim).replace(/\s+/g,' ').trim();
+   const three=parseThree(heard);
+   dbg('Heard: '+heard);
+   if(three.length>=3){
+     clues=three;
+     raw=three.join(' ');
+     playLuckyAfterClues();
+   }
+ };
+ rec.onerror=e=>dbg('Voice error: '+e.error,'bad');
+ rec.onend=()=>{if(!captured)dbg('Stopped before three clues.','bad')};
+ try{rec.start()}catch(e){dbg('Could not start recognition.','bad')}
+});
+
+function openChat(second){
+ if(!captured)return;
+ const st=state()||{};
+ const phase=second?'CHAT2':'CHAT1';
+ save({...st,phase,clues,raw,performer:second?'cash':'lucky',time:V.currentTime,leftAt:Date.now()});
+ window.open('https://chatgpt.com/?q='+encodeURIComponent(promptFor(second)),'thinkingChat');
+ dbg(second?'Chat 2 opened.':'Chat 1 opened.','good');
+}
+
+V.addEventListener('click',()=>{
+ if(!captured)return;
+ if(V.paused)V.play().catch(()=>{});else V.pause();
+});
+
+// One covert profile control, always left-of-centre:
+ // LUCKY -> Chat 1
+ // RETURN1 -> Cash still
+ // CASH -> Chat 2
+AV.addEventListener('click',e=>{
+ e.stopPropagation();
+ const st=state();
+ if(!captured||!st)return;
+
+ if(st.phase==='LUCKY'){
+   openChat(false);
+   return;
+ }
+
+ if(st.phase==='RETURN1'){
+   V.pause();
+   setCash(true);
+   P.style.display='grid';
+   save({phase:'CASH_READY',clues,raw,performer:'cash',time:0});
+   dbg('Cash ready.','good');
+   return;
+ }
+
+ if(st.phase==='CASH'){
+   openChat(true);
+   return;
+ }
+
+ if(st.phase==='RETURN2'){
+   V.pause();
+   dbg('Second pass complete.','good');
+   return;
+ }
+});
+
+
+
+function restore(){
+ const st=state(); if(!st)return;
+ clues=st.clues||[];raw=st.raw||'';captured=clues.length>=3;
+ if(!captured)return;
+ performer=st.performer||'lucky';
+ if(performer==='cash')setCash(true);else setLucky(true);
+ P.style.display=(st.phase==='CASH_READY')?'grid':'none';
+
+ const done=()=>{
+   V.removeEventListener('loadedmetadata',done);
+
+   let phase=st.phase;
+   if(phase==='CHAT1')phase='RETURN1';
+   if(phase==='CHAT2')phase='RETURN2';
+
+   const elapsed = st.leftAt ? Math.max(0,(Date.now()-st.leftAt)/1000) : 0;
+   const target = Math.min((st.time||0)+elapsed, Math.max(0,(V.duration||0)-0.1));
+
+   try{V.currentTime=target}catch(_){}
+   save({...st,phase,time:target});
+
+   // Resume immediately so picture catches up with the audio that kept running.
+   V.play().then(()=>{
+     dbg(phase==='RETURN1'?'Returned from Chat 1 — resynced.':
+         phase==='RETURN2'?'Returned from Chat 2 — resynced.':'Restored.','good');
+   }).catch(()=>{
+     dbg(phase==='RETURN1'?'Returned from Chat 1 — tap video if needed.':
+         phase==='RETURN2'?'Returned from Chat 2 — tap video if needed.':'Restored.','good');
+   });
+ };
+
+ if(V.readyState>=1)done();else V.addEventListener('loadedmetadata',done);
+}
+window.addEventListener('pageshow',restore);
+</script>
+</body></html>
